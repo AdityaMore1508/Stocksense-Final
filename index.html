@@ -1,0 +1,2204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>StockSense — Predict the Trend</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+/* ── RESET ── */
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+/* ── VARIABLES ── */
+:root {
+  --bg:        #080d18;
+  --bg2:       #0d1526;
+  --bg3:       #111d35;
+  --green:     #00e5a0;
+  --blue:      #3b82f6;
+  --red:       #f43f5e;
+  --text:      #e2e8f0;
+  --muted:     #64748b;
+  --border:    rgba(255,255,255,0.06);
+  --glow-g:    rgba(0,229,160,0.18);
+  --glow-b:    rgba(59,130,246,0.18);
+  --font-head: 'Syne', sans-serif;
+  --font-mono: 'DM Mono', monospace;
+}
+
+html { scroll-behavior: smooth; }
+
+body {
+  font-family: var(--font-head);
+  background: var(--bg);
+  color: var(--text);
+  overflow-x: hidden;
+  min-height: 100vh;
+}
+
+/* ── NOISE OVERLAY ── */
+body::before {
+  content: '';
+  position: fixed; inset: 0; z-index: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.03'/%3E%3C/svg%3E");
+  pointer-events: none;
+  opacity: 0.4;
+}
+
+/* ── GRID BG ── */
+body::after {
+  content: '';
+  position: fixed; inset: 0; z-index: 0;
+  background-image:
+    linear-gradient(rgba(59,130,246,0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(59,130,246,0.04) 1px, transparent 1px);
+  background-size: 48px 48px;
+  pointer-events: none;
+}
+
+/* ── GLOW ORBS ── */
+.orb {
+  position: fixed;
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 0;
+  filter: blur(80px);
+}
+.orb-1 {
+  width: 500px; height: 500px;
+  top: -150px; right: -100px;
+  background: radial-gradient(circle, rgba(59,130,246,0.12) 0%, transparent 70%);
+  animation: orbFloat 12s ease-in-out infinite;
+}
+.orb-2 {
+  width: 400px; height: 400px;
+  bottom: 100px; left: -100px;
+  background: radial-gradient(circle, rgba(0,229,160,0.08) 0%, transparent 70%);
+  animation: orbFloat 15s ease-in-out infinite reverse;
+}
+
+@keyframes orbFloat {
+  0%, 100% { transform: translate(0,0); }
+  33%  { transform: translate(30px,-40px); }
+  66%  { transform: translate(-20px, 20px); }
+}
+
+/* ── NAVBAR ── */
+nav {
+  position: sticky; top: 0; z-index: 100;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 5%;
+  height: 68px;
+  background: rgba(8,13,24,0.85);
+  backdrop-filter: blur(20px);
+  border-bottom: 1px solid var(--border);
+}
+
+.nav-logo {
+  font-family: var(--font-mono);
+  font-size: 1.25rem;
+  font-weight: 500;
+  color: var(--green);
+  display: flex; align-items: center; gap: 8px;
+  letter-spacing: -0.5px;
+  text-decoration: none;
+}
+
+.nav-logo-dot {
+  width: 8px; height: 8px;
+  background: var(--green);
+  border-radius: 50%;
+  box-shadow: 0 0 8px var(--green);
+  animation: blink 2s ease-in-out infinite;
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.3; }
+}
+
+.nav-links { display: flex; align-items: center; gap: 8px; }
+
+.nav-btn {
+  font-family: var(--font-head);
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 8px 18px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: all 0.25s ease;
+  text-decoration: none;
+  letter-spacing: 0.3px;
+}
+
+.nav-btn-ghost {
+  background: transparent;
+  color: var(--muted);
+  border-color: transparent;
+}
+
+.nav-btn-ghost:hover {
+  color: var(--text);
+  background: rgba(255,255,255,0.05);
+  border-color: var(--border);
+}
+
+.nav-btn-login {
+  background: linear-gradient(135deg, #00c47a, #00e5a0);
+  color: #000;
+  border-color: transparent;
+  font-weight: 700;
+}
+
+.nav-btn-login:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(0,229,160,0.35);
+}
+
+/* Mobile hamburger */
+.hamburger {
+  display: none;
+  flex-direction: column; gap: 5px;
+  cursor: pointer; padding: 6px;
+  background: none; border: none;
+}
+.hamburger span {
+  display: block; width: 22px; height: 2px;
+  background: var(--text); border-radius: 2px;
+  transition: all 0.3s;
+}
+
+/* ── LIVE TICKER ── */
+.ticker-wrap {
+  width: 100%;
+  overflow: hidden;
+  background: rgba(13,21,38,0.8);
+  border-bottom: 1px solid var(--border);
+  padding: 8px 0;
+  position: relative; z-index: 1;
+}
+.ticker-track {
+  display: flex; gap: 40px;
+  white-space: nowrap;
+  animation: tickerScroll 35s linear infinite;
+}
+.ticker-item {
+  display: flex; align-items: center; gap: 8px;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+}
+.ticker-item .sym { color: var(--text); font-weight: 500; }
+.ticker-item .price { color: var(--muted); }
+.ticker-item .up   { color: var(--green); }
+.ticker-item .dn   { color: var(--red); }
+.ticker-sep { color: var(--border); font-size: 0.6rem; }
+
+@keyframes tickerScroll { to { transform: translateX(-50%); } }
+
+/* ── HERO ── */
+.hero {
+  position: relative; z-index: 1;
+  min-height: calc(100vh - 110px);
+  display: flex; align-items: center;
+  padding: 80px 5% 60px;
+  gap: 60px;
+}
+
+/* LEFT */
+.hero-left {
+  flex: 1;
+  max-width: 580px;
+  animation: slideUp 0.8s ease forwards;
+  opacity: 0;
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(30px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.hero-badge {
+  display: inline-flex; align-items: center; gap: 7px;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  color: var(--green);
+  background: rgba(0,229,160,0.08);
+  border: 1px solid rgba(0,229,160,0.2);
+  padding: 5px 14px;
+  border-radius: 100px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  margin-bottom: 28px;
+}
+
+.hero-badge-dot {
+  width: 6px; height: 6px;
+  background: var(--green);
+  border-radius: 50%;
+  box-shadow: 0 0 6px var(--green);
+  animation: blink 1.5s ease-in-out infinite;
+}
+
+.hero-h1 {
+  font-size: clamp(2.8rem, 5.5vw, 5rem);
+  font-weight: 800;
+  line-height: 1.05;
+  letter-spacing: -2px;
+  margin-bottom: 22px;
+}
+
+.hero-h1 .line-plain { color: var(--text); display: block; }
+
+.hero-h1 .gradient-word {
+  background: linear-gradient(90deg, #3b82f6, #00e5a0);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.hero-sub {
+  font-size: 1.05rem;
+  color: var(--muted);
+  line-height: 1.75;
+  max-width: 480px;
+  margin-bottom: 36px;
+}
+
+.hero-sub strong { color: var(--green); -webkit-text-fill-color: var(--green); }
+.hero-sub .red   { color: var(--red);   -webkit-text-fill-color: var(--red); }
+
+.hero-cta {
+  display: flex; gap: 12px; flex-wrap: wrap;
+  margin-bottom: 48px;
+}
+
+.btn-primary {
+  padding: 13px 28px;
+  background: linear-gradient(135deg, #3b82f6, #00e5a0);
+  color: #000;
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 0.9rem;
+  border: none; border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.25s;
+  letter-spacing: 0.3px;
+}
+.btn-primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 28px rgba(59,130,246,0.35);
+}
+
+.btn-secondary {
+  padding: 13px 28px;
+  background: transparent;
+  color: var(--text);
+  font-family: var(--font-head);
+  font-weight: 600;
+  font-size: 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.25s;
+}
+.btn-secondary:hover {
+  border-color: rgba(59,130,246,0.4);
+  background: rgba(59,130,246,0.06);
+}
+
+/* Stats row */
+.hero-stats {
+  display: flex; gap: 32px; flex-wrap: wrap;
+}
+.stat-item { display: flex; flex-direction: column; gap: 3px; }
+.stat-val {
+  font-family: var(--font-mono);
+  font-size: 1.5rem;
+  font-weight: 500;
+  color: var(--green);
+}
+.stat-lbl { font-size: 0.73rem; color: var(--muted); letter-spacing: 0.3px; }
+
+/* RIGHT — Dashboard mockup */
+.hero-right {
+  flex: 1;
+  max-width: 560px;
+  animation: slideUp 0.8s ease 0.2s forwards;
+  opacity: 0;
+}
+
+.dashboard-mockup {
+  position: relative;
+  border-radius: 16px;
+  overflow: hidden;
+  border: 1px solid rgba(59,130,246,0.2);
+  box-shadow:
+    0 0 0 1px rgba(0,229,160,0.06),
+    0 20px 60px rgba(0,0,0,0.5),
+    0 0 80px rgba(59,130,246,0.08);
+  animation: float 6s ease-in-out infinite;
+  background: var(--bg2);
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0px); }
+  50%       { transform: translateY(-12px); }
+}
+
+/* Mockup top bar */
+.mock-topbar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 16px;
+  background: var(--bg3);
+  border-bottom: 1px solid var(--border);
+}
+.mock-dots { display: flex; gap: 6px; }
+.mock-dots span {
+  width: 10px; height: 10px; border-radius: 50%;
+}
+.mock-dots span:nth-child(1) { background: #f43f5e; }
+.mock-dots span:nth-child(2) { background: #f59e0b; }
+.mock-dots span:nth-child(3) { background: #22c55e; }
+.mock-title {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+.mock-badge {
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  color: var(--green);
+  background: rgba(0,229,160,0.08);
+  border: 1px solid rgba(0,229,160,0.2);
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+/* Mockup content */
+.mock-body { padding: 16px; }
+
+.mock-stock-row {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 14px;
+}
+.mock-stock-name {
+  font-family: var(--font-mono);
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--text);
+}
+.mock-price {
+  font-family: var(--font-mono);
+  font-size: 1.1rem;
+  font-weight: 500;
+  color: var(--text);
+}
+.mock-chg {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--green);
+  background: rgba(0,229,160,0.1);
+  padding: 3px 8px;
+  border-radius: 4px;
+}
+
+/* Mini chart SVG */
+.mock-chart-area {
+  width: 100%;
+  height: 130px;
+  position: relative;
+  margin-bottom: 14px;
+}
+
+.mock-chart-area svg { width: 100%; height: 100%; }
+
+/* EMA legend */
+.mock-legend {
+  display: flex; gap: 14px;
+  margin-bottom: 14px;
+}
+.legend-item {
+  display: flex; align-items: center; gap: 5px;
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  color: var(--muted);
+}
+.legend-line {
+  width: 18px; height: 2px;
+  border-radius: 2px;
+}
+
+/* Signal banner */
+.mock-signal {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 14px;
+  background: rgba(0,229,160,0.06);
+  border: 1px solid rgba(0,229,160,0.2);
+  border-radius: 8px;
+  margin-bottom: 12px;
+}
+.signal-label {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  color: var(--green);
+  font-weight: 500;
+}
+.signal-conf {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--muted);
+}
+
+/* Mini metric row */
+.mock-metrics {
+  display: grid; grid-template-columns: repeat(3,1fr);
+  gap: 8px;
+}
+.mock-metric {
+  background: rgba(255,255,255,0.03);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px;
+}
+.mock-metric-label {
+  font-family: var(--font-mono);
+  font-size: 0.6rem;
+  color: var(--muted);
+  margin-bottom: 4px;
+  text-transform: uppercase;
+}
+.mock-metric-val {
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--text);
+}
+.mock-metric-val.green { color: var(--green); }
+.mock-metric-val.blue  { color: var(--blue); }
+
+/* ── FEATURES STRIP ── */
+.features {
+  position: relative; z-index: 1;
+  padding: 60px 5%;
+  border-top: 1px solid var(--border);
+}
+
+.features-label {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  text-align: center;
+  margin-bottom: 36px;
+  display: flex; align-items: center; gap: 16px; justify-content: center;
+}
+.features-label::before,
+.features-label::after {
+  content: '';
+  width: 60px; height: 1px;
+  background: var(--border);
+}
+
+.features-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+}
+
+.feature-card {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 24px 20px;
+  transition: all 0.3s;
+  cursor: default;
+}
+.feature-card:hover {
+  border-color: rgba(59,130,246,0.3);
+  background: var(--bg3);
+  transform: translateY(-3px);
+  box-shadow: 0 8px 30px rgba(0,0,0,0.3);
+}
+
+.feature-icon {
+  font-size: 1.6rem;
+  margin-bottom: 12px;
+  display: block;
+}
+
+.feature-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 8px;
+}
+
+.feature-desc {
+  font-size: 0.8rem;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+/* ── HOW IT WORKS ── */
+.how {
+  position: relative; z-index: 1;
+  padding: 60px 5%;
+  border-top: 1px solid var(--border);
+}
+
+.how-title {
+  text-align: center;
+  font-size: 2rem;
+  font-weight: 800;
+  letter-spacing: -1px;
+  margin-bottom: 8px;
+}
+.how-title .g { color: var(--green); }
+.how-sub {
+  text-align: center;
+  font-size: 0.88rem;
+  color: var(--muted);
+  margin-bottom: 48px;
+}
+
+.steps {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  position: relative;
+}
+
+.steps::before {
+  content: '';
+  position: absolute;
+  top: 36px; left: 10%; right: 10%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--blue), var(--green), transparent);
+  z-index: 0;
+}
+
+.step {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 24px 18px;
+  text-align: center;
+  position: relative; z-index: 1;
+  transition: all 0.3s;
+}
+.step:hover { border-color: rgba(0,229,160,0.25); transform: translateY(-3px); }
+
+.step-num {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--green);
+  background: rgba(0,229,160,0.08);
+  border: 1px solid rgba(0,229,160,0.2);
+  width: 32px; height: 32px;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  margin: 0 auto 14px;
+  font-weight: 500;
+}
+.step-icon { font-size: 1.6rem; margin-bottom: 10px; }
+.step-title { font-size: 0.88rem; font-weight: 700; margin-bottom: 6px; }
+.step-desc { font-size: 0.78rem; color: var(--muted); line-height: 1.5; }
+
+/* ── CTA SECTION ── */
+.cta-section {
+  position: relative; z-index: 1;
+  margin: 40px 5% 60px;
+  background: linear-gradient(135deg, var(--bg3), rgba(59,130,246,0.06));
+  border: 1px solid rgba(59,130,246,0.15);
+  border-radius: 20px;
+  padding: 56px 48px;
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 32px;
+  overflow: hidden;
+}
+
+.cta-section::before {
+  content: '';
+  position: absolute;
+  top: -60px; right: -60px;
+  width: 250px; height: 250px;
+  background: radial-gradient(circle, rgba(0,229,160,0.08) 0%, transparent 70%);
+  border-radius: 50%;
+}
+
+.cta-text h2 {
+  font-size: 1.8rem;
+  font-weight: 800;
+  letter-spacing: -1px;
+  margin-bottom: 8px;
+}
+.cta-text h2 span { color: var(--green); }
+.cta-text p { font-size: 0.88rem; color: var(--muted); }
+
+/* ── FOOTER ── */
+footer {
+  position: relative; z-index: 1;
+  border-top: 1px solid var(--border);
+  padding: 24px 5%;
+  display: flex; align-items: center; justify-content: space-between;
+  flex-wrap: wrap; gap: 12px;
+}
+
+.footer-logo {
+  font-family: var(--font-mono);
+  font-size: 0.9rem;
+  color: var(--green);
+}
+
+.footer-text {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--muted);
+  text-align: center;
+}
+
+.footer-badge {
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  color: var(--muted);
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  padding: 4px 10px;
+  border-radius: 4px;
+}
+
+/* ── RESPONSIVE ── */
+@media (max-width: 1024px) {
+  .features-grid { grid-template-columns: repeat(2, 1fr); }
+  .steps { grid-template-columns: repeat(2, 1fr); }
+  .steps::before { display: none; }
+}
+
+@media (max-width: 768px) {
+  nav { padding: 0 4%; }
+  .nav-links { display: none; flex-direction: column; position: absolute; top: 68px; left: 0; right: 0; background: rgba(8,13,24,0.98); border-bottom: 1px solid var(--border); padding: 16px; gap: 8px; }
+  .nav-links.open { display: flex; }
+  .hamburger { display: flex; }
+
+  .hero { flex-direction: column; padding: 48px 4% 40px; gap: 40px; }
+  .hero-left { max-width: 100%; }
+  .hero-right { max-width: 100%; width: 100%; }
+  .hero-stats { gap: 20px; }
+
+  .cta-section { flex-direction: column; text-align: center; padding: 36px 24px; }
+
+  footer { flex-direction: column; text-align: center; }
+}
+
+@media (max-width: 520px) {
+  .features-grid, .steps { grid-template-columns: 1fr; }
+  .hero-h1 { font-size: 2.4rem; letter-spacing: -1.5px; }
+  .hero-cta { flex-direction: column; }
+  .btn-primary, .btn-secondary { width: 100%; text-align: center; }
+}
+</style>
+</head>
+<body>
+
+<!-- GLOW ORBS -->
+<div class="orb orb-1"></div>
+<div class="orb orb-2"></div>
+
+<!-- ════════════════ NAVBAR ════════════════ -->
+<nav>
+  <a class="nav-logo" href="#">
+    <span class="nav-logo-dot"></span>
+    StockSense
+  </a>
+
+  <div class="nav-links" id="navLinks">
+    <button class="nav-btn nav-btn-ghost" onclick="openAbout()">About</button>
+    <button class="nav-btn nav-btn-ghost" onclick="openLearn()">Learn</button>
+    <button class="nav-btn nav-btn-login" onclick="openLogin()">Login →</button>
+  </div>
+
+  <button class="hamburger" id="hamburger" aria-label="Menu">
+    <span></span><span></span><span></span>
+  </button>
+</nav>
+
+<!-- ════════════════ TICKER ════════════════ -->
+<div class="ticker-wrap">
+  <div class="ticker-track" id="ticker"></div>
+</div>
+
+<!-- ════════════════ HERO ════════════════ -->
+<section class="hero">
+
+  <!-- LEFT -->
+  <div class="hero-left">
+    <div class="hero-badge">
+      <span class="hero-badge-dot"></span>
+      EMA-Powered &nbsp;·&nbsp; NSE India &nbsp;·&nbsp; Real Data
+    </div>
+
+    <h1 class="hero-h1">
+      <span class="line-plain">Predict the</span>
+      <span class="line-plain"><span class="gradient-word">Trend</span> Before</span>
+      <span class="line-plain">the Market Does</span>
+    </h1>
+
+    <p class="hero-sub">
+      AI-powered Exponential Moving Average analysis for retail investors.<br>
+      Know whether a stock is heading <strong>UP ▲</strong> or <span class="red">DOWN ▼</span> before you invest.
+    </p>
+
+    <div class="hero-cta">
+      <button class="btn-secondary" onclick="document.getElementById('how').scrollIntoView({behavior:'smooth'})">
+        How It Works ↓
+      </button>
+      <button class="btn-primary" onclick="openLogin()">
+        Start Predicting →
+      </button>
+    </div>
+
+    <div class="hero-stats">
+      <div class="stat-item">
+        <span class="stat-val">89.4%</span>
+        <span class="stat-lbl">EMA Accuracy</span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-val">12+</span>
+        <span class="stat-lbl">NSE Stocks</span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-val">30D</span>
+        <span class="stat-lbl">Forecast Range</span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-val">Live</span>
+        <span class="stat-lbl">Yahoo Finance</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- RIGHT — Dashboard Mockup -->
+  <div class="hero-right">
+    <div class="dashboard-mockup">
+
+      <!-- Top bar -->
+      <div class="mock-topbar">
+        <div class="mock-dots">
+          <span></span><span></span><span></span>
+        </div>
+        <span class="mock-title">StockSense — EMA Dashboard</span>
+        <span class="mock-badge">🟢 Live</span>
+      </div>
+
+      <!-- Body -->
+      <div class="mock-body">
+        <!-- Stock row -->
+        <div class="mock-stock-row">
+          <span class="mock-stock-name">RELIANCE.NS</span>
+          <span class="mock-price">₹2,934.50</span>
+          <span class="mock-chg">▲ +1.84%</span>
+        </div>
+
+        <!-- Chart -->
+        <div class="mock-chart-area">
+          <svg viewBox="0 0 520 130" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <linearGradient id="priceGrad" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stop-color="#00e5a0" stop-opacity="0.2"/>
+                <stop offset="100%" stop-color="#00e5a0" stop-opacity="0"/>
+              </linearGradient>
+            </defs>
+            <!-- Price area fill -->
+            <path d="M0,95 C20,90 40,85 60,80 C80,75 100,70 120,68 C140,66 160,72 180,65 C200,58 220,50 240,48 C260,46 280,52 300,45 C320,38 340,30 360,28 C380,26 400,32 420,25 C440,18 460,15 480,12 C500,9 510,8 520,8 L520,130 L0,130 Z"
+              fill="url(#priceGrad)"/>
+            <!-- Price line -->
+            <path d="M0,95 C20,90 40,85 60,80 C80,75 100,70 120,68 C140,66 160,72 180,65 C200,58 220,50 240,48 C260,46 280,52 300,45 C320,38 340,30 360,28 C380,26 400,32 420,25 C440,18 460,15 480,12 C500,9 510,8 520,8"
+              fill="none" stroke="#00e5a0" stroke-width="2"/>
+            <!-- EMA-12 -->
+            <path d="M0,98 C30,93 60,86 90,82 C120,78 150,71 180,67 C210,63 240,53 270,47 C300,41 330,33 360,29 C390,25 420,24 450,18 C480,12 500,10 520,9"
+              fill="none" stroke="#3b82f6" stroke-width="1.5" stroke-dasharray="4,3"/>
+            <!-- EMA-26 -->
+            <path d="M0,102 C30,99 60,95 90,90 C120,85 150,80 180,75 C210,70 240,62 270,56 C300,50 330,44 360,38 C390,32 420,29 450,24 C480,19 500,15 520,13"
+              fill="none" stroke="#f59e0b" stroke-width="1.5" stroke-dasharray="7,3"/>
+            <!-- Crossover marker -->
+            <circle cx="300" cy="45" r="4" fill="#00e5a0" opacity="0.9"/>
+            <line x1="300" y1="0" x2="300" y2="130" stroke="#00e5a0" stroke-width="0.8" stroke-dasharray="3,3" opacity="0.4"/>
+            <!-- Y-axis labels -->
+            <text x="4" y="12" font-family="monospace" font-size="8" fill="#64748b">₹3000</text>
+            <text x="4" y="70" font-family="monospace" font-size="8" fill="#64748b">₹2800</text>
+            <text x="4" y="125" font-family="monospace" font-size="8" fill="#64748b">₹2600</text>
+          </svg>
+        </div>
+
+        <!-- Legend -->
+        <div class="mock-legend">
+          <div class="legend-item"><div class="legend-line" style="background:#00e5a0"></div>Price</div>
+          <div class="legend-item"><div class="legend-line" style="background:#3b82f6; border-top: 1px dashed #3b82f6; background:none; border-bottom:none;"></div>EMA-12</div>
+          <div class="legend-item"><div class="legend-line" style="background:#f59e0b"></div>EMA-26</div>
+        </div>
+
+        <!-- Signal -->
+        <div class="mock-signal">
+          <span class="signal-label">▲ UPTREND — Golden Cross Detected</span>
+          <span class="signal-conf">Confidence: 91.3%</span>
+        </div>
+
+        <!-- Metrics -->
+        <div class="mock-metrics">
+          <div class="mock-metric">
+            <div class="mock-metric-label">EMA-12</div>
+            <div class="mock-metric-val green">₹2,918</div>
+          </div>
+          <div class="mock-metric">
+            <div class="mock-metric-label">EMA-26</div>
+            <div class="mock-metric-val blue">₹2,891</div>
+          </div>
+          <div class="mock-metric">
+            <div class="mock-metric-label">Signal</div>
+            <div class="mock-metric-val green">BUY ▲</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</section>
+
+<!-- ════════════════ FEATURES ════════════════ -->
+<section class="features">
+  <div class="features-label">Why StockSense</div>
+  <div class="features-grid">
+    <div class="feature-card">
+      <span class="feature-icon">📡</span>
+      <div class="feature-title">Live NSE Data</div>
+      <div class="feature-desc">Real-time historical OHLCV data fetched directly from Yahoo Finance for accurate EMA computation.</div>
+    </div>
+    <div class="feature-card">
+      <span class="feature-icon">⚡</span>
+      <div class="feature-title">EMA Crossover Engine</div>
+      <div class="feature-desc">EMA-12 vs EMA-26 crossover detection. Golden Cross = Uptrend. Death Cross = Downtrend. No guesswork.</div>
+    </div>
+    <div class="feature-card">
+      <span class="feature-icon">🔮</span>
+      <div class="feature-title">30-Day Forecast</div>
+      <div class="feature-desc">Day-wise predicted price table with ▲/▼ signal badges for up to 30 days into the future.</div>
+    </div>
+    <div class="feature-card">
+      <span class="feature-icon">📊</span>
+      <div class="feature-title">Interactive Dashboard</div>
+      <div class="feature-desc">Clean, chart-driven UI with price overlays, trend signals, and confidence scores at a glance.</div>
+    </div>
+  </div>
+</section>
+
+<!-- ════════════════ HOW IT WORKS ════════════════ -->
+<section class="how" id="how">
+  <h2 class="how-title">How It <span class="g">Works</span></h2>
+  <p class="how-sub">Four simple steps from stock selection to investment decision.</p>
+  <div class="steps">
+    <div class="step">
+      <div class="step-num">01</div>
+      <div class="step-icon">📌</div>
+      <div class="step-title">Select Stock</div>
+      <div class="step-desc">Pick any NSE-listed stock from the dropdown. Historical data loads automatically.</div>
+    </div>
+    <div class="step">
+      <div class="step-num">02</div>
+      <div class="step-icon">🧮</div>
+      <div class="step-title">Compute EMA</div>
+      <div class="step-desc">EMA-12 and EMA-26 are calculated from real closing prices. Recent data weighted more.</div>
+    </div>
+    <div class="step">
+      <div class="step-num">03</div>
+      <div class="step-icon">⚡</div>
+      <div class="step-title">Detect Signal</div>
+      <div class="step-desc">Crossover logic fires. Golden Cross = BUY signal. Death Cross = SELL signal. Instant result.</div>
+    </div>
+    <div class="step">
+      <div class="step-num">04</div>
+      <div class="step-icon">📈</div>
+      <div class="step-title">View Forecast</div>
+      <div class="step-desc">See your day-by-day prediction chart, confidence score, and download the full report.</div>
+    </div>
+  </div>
+</section>
+
+<!-- ════════════════ CTA ════════════════ -->
+<div class="cta-section">
+  <div class="cta-text">
+    <h2>Ready to predict the <span>market</span>?</h2>
+    <p>Join retail investors already using EMA-powered signals to make smarter decisions.</p>
+  </div>
+  <button class="btn-primary" style="white-space:nowrap; font-size:1rem; padding:15px 36px;" onclick="openLogin()">
+    Launch StockSense →
+  </button>
+</div>
+
+<!-- ════════════════ FOOTER ════════════════ -->
+<footer>
+  <span class="footer-logo">● StockSense</span>
+  <span class="footer-text">Built by Group EPD-B7 &nbsp;·&nbsp; Engineering Product Design &nbsp;·&nbsp; FinTech Domain<br>
+  <span style="color:#3d4a5c; font-size:0.62rem;">Not financial advice. For educational purposes only.</span></span>
+  <span class="footer-badge">EMA-12 / EMA-26</span>
+</footer>
+
+<script>
+// ── HAMBURGER ──
+document.getElementById('hamburger').addEventListener('click', () => {
+  document.getElementById('navLinks').classList.toggle('open');
+});
+
+// ── TICKER DATA ──
+const TICKER_DATA = [
+  { sym:'RELIANCE', price:'2,934.50', chg:'+1.84', up:true },
+  { sym:'TCS',      price:'3,982.10', chg:'+0.62', up:true },
+  { sym:'INFY',     price:'1,748.30', chg:'-0.43', up:false },
+  { sym:'HDFCBANK', price:'1,712.80', chg:'+1.12', up:true },
+  { sym:'ICICIBANK',price:'1,198.60', chg:'+0.88', up:true },
+  { sym:'WIPRO',    price:'497.40',   chg:'-0.71', up:false },
+  { sym:'TATAMOTORS',price:'1,024.90',chg:'+2.31', up:true },
+  { sym:'BAJFINANCE',price:'7,318.50',chg:'+1.05', up:true },
+  { sym:'SUNPHARMA', price:'1,876.20',chg:'-0.28', up:false },
+  { sym:'HCLTECH',   price:'1,893.40',chg:'+0.94', up:true },
+  { sym:'ADANIENT',  price:'2,681.70',chg:'+1.63', up:true },
+  { sym:'ONGC',      price:'298.40',  chg:'-0.55', up:false },
+];
+
+function buildTicker() {
+  const items = TICKER_DATA.map(d => `
+    <span class="ticker-item">
+      <span class="sym">${d.sym}</span>
+      <span class="price">₹${d.price}</span>
+      <span class="${d.up ? 'up' : 'dn'}">${d.up ? '▲' : '▼'} ${d.chg}%</span>
+    </span>
+    <span class="ticker-sep">|</span>
+  `).join('');
+  const track = document.getElementById('ticker');
+  track.innerHTML = items + items;
+}
+
+buildTicker();
+
+// ── SCROLL REVEAL ──
+const observer = new IntersectionObserver((entries) => {
+  entries.forEach(e => {
+    if (e.isIntersecting) {
+      e.target.style.opacity = '1';
+      e.target.style.transform = 'translateY(0)';
+    }
+  });
+}, { threshold: 0.1 });
+
+document.querySelectorAll('.feature-card, .step').forEach(el => {
+  el.style.opacity = '0';
+  el.style.transform = 'translateY(20px)';
+  el.style.transition = 'opacity 0.5s ease, transform 0.5s ease';
+  observer.observe(el);
+});
+
+// ── ANIMATED PRICE IN MOCKUP ──
+const prices = [2918, 2924, 2931, 2928, 2935, 2929, 2934];
+let pi = 0;
+setInterval(() => {
+  pi = (pi + 1) % prices.length;
+  const el = document.querySelector('.mock-price');
+  if (el) el.textContent = `₹${prices[pi].toLocaleString('en-IN')}.50`;
+}, 2000);
+
+// ══════════════════════════════════════════
+// LOGIN MODAL
+// ══════════════════════════════════════════
+function openLogin() {
+  document.getElementById('loginModal').classList.add('active');
+  document.body.style.overflow = 'hidden';
+  setTimeout(() => document.getElementById('login-email').focus(), 300);
+}
+
+function closeLogin() {
+  document.getElementById('loginModal').classList.remove('active');
+  document.body.style.overflow = '';
+  // Reset form
+  document.getElementById('login-email').value = '';
+  document.getElementById('login-pass').value  = '';
+  document.getElementById('login-error').textContent = '';
+  document.getElementById('login-email').classList.remove('error');
+  document.getElementById('login-pass').classList.remove('error');
+}
+
+function handleOverlayClick(e) {
+  if (e.target === document.getElementById('loginModal')) closeLogin();
+}
+
+// ESC to close
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closeLogin();
+});
+
+// Tab switch
+function switchTab(tab) {
+  const isLogin = tab === 'login';
+  document.getElementById('form-login').style.display  = isLogin ? 'block' : 'none';
+  document.getElementById('form-signup').style.display = isLogin ? 'none'  : 'block';
+  document.getElementById('tab-login').classList.toggle('active',  isLogin);
+  document.getElementById('tab-signup').classList.toggle('active', !isLogin);
+  // Clear errors
+  document.getElementById('login-error').textContent  = '';
+  document.getElementById('signup-error').textContent = '';
+}
+
+// Password visibility toggle
+function togglePass(id, btn) {
+  const input = document.getElementById(id);
+  if (input.type === 'password') { input.type = 'text';     btn.textContent = '🙈'; }
+  else                           { input.type = 'password'; btn.textContent = '👁'; }
+}
+
+// ── VALIDATION ──
+function isValidEmail(email) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+}
+
+function setLoading(formType, loading) {
+  const btn  = document.getElementById(`${formType}-submit-btn`);
+  const text = document.getElementById(`${formType}-btn-text`);
+  const spin = document.getElementById(`${formType}-spinner`);
+  btn.disabled      = loading;
+  text.style.display = loading ? 'none'  : 'inline';
+  spin.style.display = loading ? 'inline-block' : 'none';
+}
+
+function showError(formType, msg) {
+  const el = document.getElementById(`${formType}-error`);
+  el.innerHTML = msg ? `⚠ ${msg}` : '';
+}
+
+// ── LOGIN HANDLER ──
+function handleLogin() {
+  const email = document.getElementById('login-email').value.trim();
+  const pass  = document.getElementById('login-pass').value;
+
+  // Clear previous
+  showError('login', '');
+  document.getElementById('login-email').classList.remove('error');
+  document.getElementById('login-pass').classList.remove('error');
+
+  // Validate
+  if (!email) {
+    showError('login', 'Please enter your email address.');
+    document.getElementById('login-email').classList.add('error');
+    document.getElementById('login-email').focus();
+    return;
+  }
+  if (!isValidEmail(email)) {
+    showError('login', 'Please enter a valid email address.');
+    document.getElementById('login-email').classList.add('error');
+    document.getElementById('login-email').focus();
+    return;
+  }
+  if (!pass) {
+    showError('login', 'Please enter your password.');
+    document.getElementById('login-pass').classList.add('error');
+    document.getElementById('login-pass').focus();
+    return;
+  }
+  if (pass.length < 6) {
+    showError('login', 'Password must be at least 6 characters.');
+    document.getElementById('login-pass').classList.add('error');
+    return;
+  }
+
+  // Simulate auth
+  setLoading('login', true);
+  setTimeout(() => {
+    setLoading('login', false);
+    showSuccess(email);
+  }, 1800);
+}
+
+// ── SIGNUP HANDLER ──
+function handleSignup() {
+  const name  = document.getElementById('signup-name').value.trim();
+  const email = document.getElementById('signup-email').value.trim();
+  const pass  = document.getElementById('signup-pass').value;
+
+  showError('signup', '');
+
+  if (!name) {
+    showError('signup', 'Please enter your full name.');
+    document.getElementById('signup-name').focus(); return;
+  }
+  if (!email || !isValidEmail(email)) {
+    showError('signup', 'Please enter a valid email address.');
+    document.getElementById('signup-email').focus(); return;
+  }
+  if (!pass || pass.length < 6) {
+    showError('signup', 'Password must be at least 6 characters.');
+    document.getElementById('signup-pass').focus(); return;
+  }
+
+  setLoading('signup', true);
+  setTimeout(() => {
+    setLoading('signup', false);
+    showSuccess(email);
+  }, 1800);
+}
+
+// ── SOCIAL LOGIN ──
+function handleSocialLogin(provider) {
+  const box = document.getElementById('modalBox');
+  box.style.pointerEvents = 'none'; box.style.opacity = '0.7';
+  setTimeout(() => {
+    box.style.pointerEvents = ''; box.style.opacity = '1';
+    showSuccess(`${provider} user`);
+  }, 1200);
+}
+
+// ── SUCCESS → REDIRECT ──
+function showSuccess(email) {
+  const box = document.getElementById('modalBox');
+
+  // Hide all form content, show success
+  box.innerHTML = `
+    <div class="modal-success" style="display:flex;">
+      <div class="success-icon">✓</div>
+      <div class="success-title">You're in!</div>
+      <div class="success-sub">Signed in as <strong style="color:var(--text)">${email}</strong><br>Launching your EMA dashboard...</div>
+      <div class="success-bar-wrap">
+        <div class="success-bar" id="successBar"></div>
+      </div>
+      <div class="success-status" id="successStatus">Connecting to NSE data...</div>
+    </div>
+  `;
+
+  // Animate progress bar
+  requestAnimationFrame(() => {
+    setTimeout(() => { document.getElementById('successBar').style.width = '100%'; }, 50);
+  });
+
+  // Cycle status messages
+  const msgs = [
+    'Connecting to NSE data...',
+    'Fetching OHLCV prices...',
+    'Computing EMA-12 & EMA-26...',
+    'Launching dashboard...'
+  ];
+  let mi = 0;
+  const interval = setInterval(() => {
+    mi++;
+    const el = document.getElementById('successStatus');
+    if (el && msgs[mi]) el.textContent = msgs[mi];
+  }, 600);
+
+  // Redirect to main app after 2.6s
+  setTimeout(() => {
+    clearInterval(interval);
+    window.location.href = 'StockSense_Live.html';
+  }, 2600);
+}
+</script>
+
+<!-- ════════════════ LOGIN MODAL ════════════════ -->
+<div class="modal-overlay" id="loginModal" onclick="handleOverlayClick(event)">
+  <div class="modal-box" id="modalBox">
+
+    <!-- Close -->
+    <button class="modal-close" onclick="closeLogin()">✕</button>
+
+    <!-- Header -->
+    <div class="modal-logo">
+      <span class="nav-logo-dot" style="width:10px;height:10px;"></span>
+      StockSense
+    </div>
+    <h2 class="modal-title">Welcome Back</h2>
+
+    <!-- Tabs -->
+    <div class="modal-tabs">
+      <button class="tab-btn active" id="tab-login" onclick="switchTab('login')">Login</button>
+      <button class="tab-btn" id="tab-signup" onclick="switchTab('signup')">Sign Up</button>
+    </div>
+
+    <!-- LOGIN FORM -->
+    <div id="form-login">
+      <div class="input-group">
+        <label class="input-label">Email Address</label>
+        <input type="email" id="login-email" class="modal-input" placeholder="you@example.com" />
+      </div>
+      <div class="input-group">
+        <label class="input-label">Password</label>
+        <div class="input-wrap">
+          <input type="password" id="login-pass" class="modal-input" placeholder="••••••••" />
+          <button class="eye-btn" onclick="togglePass('login-pass', this)">👁</button>
+        </div>
+      </div>
+      <div class="modal-row">
+        <label class="checkbox-label">
+          <input type="checkbox" id="remember"> Remember me
+        </label>
+        <a class="forgot-link" href="#" onclick="alert('Password reset coming soon')">Forgot password?</a>
+      </div>
+      <div class="modal-error" id="login-error"></div>
+      <button class="modal-btn" id="login-submit-btn" onclick="handleLogin()">
+        <span id="login-btn-text">Sign In →</span>
+        <span id="login-spinner" class="btn-spinner" style="display:none"></span>
+      </button>
+    </div>
+
+    <!-- SIGNUP FORM -->
+    <div id="form-signup" style="display:none">
+      <div class="input-group">
+        <label class="input-label">Full Name</label>
+        <input type="text" id="signup-name" class="modal-input" placeholder="Aditya More" />
+      </div>
+      <div class="input-group">
+        <label class="input-label">Email Address</label>
+        <input type="email" id="signup-email" class="modal-input" placeholder="you@example.com" />
+      </div>
+      <div class="input-group">
+        <label class="input-label">Password</label>
+        <div class="input-wrap">
+          <input type="password" id="signup-pass" class="modal-input" placeholder="Min. 6 characters" />
+          <button class="eye-btn" onclick="togglePass('signup-pass', this)">👁</button>
+        </div>
+      </div>
+      <div class="modal-error" id="signup-error"></div>
+      <button class="modal-btn" id="signup-submit-btn" onclick="handleSignup()">
+        <span id="signup-btn-text">Create Account →</span>
+        <span id="signup-spinner" class="btn-spinner" style="display:none"></span>
+      </button>
+    </div>
+
+    <!-- Divider -->
+    <div class="modal-divider"><span>or continue with</span></div>
+
+    <!-- Social -->
+    <div class="social-row">
+      <button class="social-btn" onclick="handleSocialLogin('Google')">
+        <svg width="16" height="16" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+        Google
+      </button>
+      <button class="social-btn" onclick="handleSocialLogin('GitHub')">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="white"><path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/></svg>
+        GitHub
+      </button>
+    </div>
+
+    <p class="modal-footer-note">
+      By continuing, you agree to StockSense's
+      <a href="#" onclick="return false">Terms of Service</a> &amp;
+      <a href="#" onclick="return false">Privacy Policy</a>
+    </p>
+  </div>
+</div>
+
+<!-- ── MODAL STYLES ── -->
+<style>
+/* Overlay */
+.modal-overlay {
+  position: fixed; inset: 0; z-index: 999;
+  background: rgba(4,8,18,0.85);
+  backdrop-filter: blur(12px);
+  display: flex; align-items: center; justify-content: center;
+  opacity: 0; pointer-events: none;
+  transition: opacity 0.3s ease;
+  padding: 20px;
+}
+.modal-overlay.active {
+  opacity: 1; pointer-events: all;
+}
+
+/* Box */
+.modal-box {
+  background: #0d1526;
+  border: 1px solid rgba(59,130,246,0.2);
+  border-radius: 20px;
+  padding: 36px 36px 28px;
+  width: 100%; max-width: 420px;
+  position: relative;
+  box-shadow: 0 24px 80px rgba(0,0,0,0.6), 0 0 0 1px rgba(0,229,160,0.05);
+  transform: scale(0.94) translateY(16px);
+  transition: transform 0.3s ease;
+}
+.modal-overlay.active .modal-box {
+  transform: scale(1) translateY(0);
+}
+
+/* Close */
+.modal-close {
+  position: absolute; top: 16px; right: 18px;
+  background: none; border: none;
+  color: var(--muted); font-size: 1rem;
+  cursor: pointer; padding: 4px 8px;
+  border-radius: 6px;
+  transition: all 0.2s;
+}
+.modal-close:hover { color: var(--text); background: rgba(255,255,255,0.06); }
+
+/* Logo */
+.modal-logo {
+  font-family: var(--font-mono);
+  font-size: 1rem;
+  color: var(--green);
+  display: flex; align-items: center; gap: 7px;
+  margin-bottom: 16px;
+  font-weight: 500;
+}
+
+.modal-title {
+  font-size: 1.55rem;
+  font-weight: 800;
+  letter-spacing: -0.8px;
+  margin-bottom: 5px;
+  color: var(--text);
+}
+.modal-sub {
+  font-size: 0.83rem;
+  color: var(--muted);
+  margin-bottom: 22px;
+}
+
+/* Tabs */
+.modal-tabs {
+  display: flex;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 3px;
+  margin-bottom: 22px;
+  gap: 3px;
+}
+.tab-btn {
+  flex: 1;
+  background: none; border: none;
+  color: var(--muted);
+  font-family: var(--font-head);
+  font-size: 0.83rem; font-weight: 600;
+  padding: 7px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.tab-btn.active {
+  background: rgba(59,130,246,0.15);
+  color: var(--blue);
+  border: 1px solid rgba(59,130,246,0.25);
+}
+
+/* Input */
+.input-group { margin-bottom: 14px; }
+.input-label {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  margin-bottom: 6px;
+}
+.input-wrap { position: relative; }
+.modal-input {
+  width: 100%;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 11px 14px;
+  font-family: var(--font-head);
+  font-size: 0.88rem;
+  color: var(--text);
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.modal-input::placeholder { color: #3a4a60; }
+.modal-input:focus {
+  border-color: rgba(59,130,246,0.5);
+  box-shadow: 0 0 0 3px rgba(59,130,246,0.08);
+}
+.modal-input.error { border-color: rgba(244,63,94,0.5); }
+.eye-btn {
+  position: absolute; right: 12px; top: 50%;
+  transform: translateY(-50%);
+  background: none; border: none;
+  cursor: pointer; font-size: 0.85rem;
+  opacity: 0.5; transition: opacity 0.2s;
+}
+.eye-btn:hover { opacity: 1; }
+
+/* Row */
+.modal-row {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 16px;
+}
+.checkbox-label {
+  display: flex; align-items: center; gap: 7px;
+  font-size: 0.78rem; color: var(--muted); cursor: pointer;
+}
+.checkbox-label input { accent-color: var(--green); cursor: pointer; }
+.forgot-link {
+  font-size: 0.78rem; color: var(--blue);
+  text-decoration: none; transition: opacity 0.2s;
+}
+.forgot-link:hover { opacity: 0.7; }
+
+/* Error */
+.modal-error {
+  font-size: 0.78rem; color: var(--red);
+  min-height: 18px; margin-bottom: 10px;
+  display: flex; align-items: center; gap: 5px;
+}
+
+/* Submit button */
+.modal-btn {
+  width: 100%;
+  padding: 13px;
+  background: linear-gradient(135deg, #3b82f6, #00e5a0);
+  color: #000;
+  font-family: var(--font-head);
+  font-weight: 700; font-size: 0.92rem;
+  border: none; border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.25s;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  margin-bottom: 20px;
+}
+.modal-btn:hover { transform: translateY(-1px); box-shadow: 0 8px 24px rgba(59,130,246,0.3); }
+.modal-btn:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+
+/* Spinner */
+.btn-spinner {
+  width: 16px; height: 16px;
+  border: 2px solid rgba(0,0,0,0.3);
+  border-top-color: #000;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Divider */
+.modal-divider {
+  display: flex; align-items: center; gap: 12px;
+  margin-bottom: 14px;
+}
+.modal-divider::before,
+.modal-divider::after {
+  content: ''; flex: 1; height: 1px; background: var(--border);
+}
+.modal-divider span { font-size: 0.72rem; color: var(--muted); white-space: nowrap; }
+
+/* Social */
+.social-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 18px; }
+.social-btn {
+  display: flex; align-items: center; justify-content: center; gap: 7px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  color: var(--text);
+  font-family: var(--font-head);
+  font-size: 0.83rem; font-weight: 600;
+  padding: 10px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.social-btn:hover { background: rgba(255,255,255,0.08); border-color: rgba(255,255,255,0.12); }
+
+/* Footer note */
+.modal-footer-note {
+  text-align: center;
+  font-size: 0.7rem;
+  color: #3a4a60;
+  line-height: 1.6;
+}
+.modal-footer-note a { color: var(--blue); text-decoration: none; }
+.modal-footer-note a:hover { text-decoration: underline; }
+
+/* Success overlay inside modal */
+.modal-success {
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 20px 0 10px;
+}
+.success-icon {
+  width: 60px; height: 60px;
+  background: rgba(0,229,160,0.1);
+  border: 2px solid rgba(0,229,160,0.3);
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1.8rem;
+  margin-bottom: 16px;
+  animation: popIn 0.4s ease;
+}
+@keyframes popIn {
+  from { transform: scale(0.5); opacity: 0; }
+  to   { transform: scale(1);   opacity: 1; }
+}
+.success-title { font-size: 1.3rem; font-weight: 800; margin-bottom: 6px; color: var(--green); }
+.success-sub   { font-size: 0.82rem; color: var(--muted); margin-bottom: 20px; }
+.success-bar-wrap {
+  width: 100%; background: rgba(255,255,255,0.06);
+  border-radius: 4px; height: 4px; margin-bottom: 10px; overflow: hidden;
+}
+.success-bar {
+  height: 100%; width: 0%;
+  background: linear-gradient(90deg, #3b82f6, #00e5a0);
+  border-radius: 4px;
+  transition: width 2.5s ease;
+}
+.success-status { font-family: var(--font-mono); font-size: 0.72rem; color: var(--muted); }
+</style>
+
+<!-- ════════════════ ABOUT MODAL ════════════════ -->
+<div class="modal-overlay" id="aboutModal" onclick="handleAboutOverlay(event)">
+  <div class="about-box" id="aboutBox">
+
+    <button class="modal-close" onclick="closeAbout()">✕</button>
+
+    <!-- Header -->
+    <div class="about-header">
+      <div class="about-logo">
+        <span class="nav-logo-dot" style="width:10px;height:10px;"></span>
+        StockSense
+      </div>
+      <div class="about-tag">EPD-B7 &nbsp;·&nbsp; FinTech &nbsp;·&nbsp; EMA Predictor</div>
+      <h2 class="about-title">About the Project</h2>
+    </div>
+
+    <div class="about-scroll">
+
+      <!-- Problem Statement -->
+      <div class="about-section">
+        <div class="about-section-title">📌 Problem Statement</div>
+        <p class="about-p">Retail investors and traders in India face three major challenges — <span class="hl-green">Market Volatility</span>, <span class="hl-blue">Data Complexity</span>, and <span class="hl-green">Decision-Making Bias</span>. Most retail investors lack access to professional-grade analytical tools and rely on intuition or unverified tips — leading to poor investment decisions and financial losses.</p>
+      </div>
+
+      <!-- Solution -->
+      <div class="about-section">
+        <div class="about-section-title">💡 Our Solution</div>
+        <p class="about-p">StockSense is a web-based stock trend prediction dashboard that uses <span class="hl-green">Exponential Moving Average (EMA-12 / EMA-26)</span> crossover analysis to predict whether an NSE-listed stock is heading into an <strong style="color:var(--green)">UPTREND ▲</strong> or <strong style="color:var(--red)">DOWNTREND ▼</strong> — providing data-driven, bias-free signals instantly.</p>
+      </div>
+
+      <!-- How it works -->
+      <div class="about-section">
+        <div class="about-section-title">⚙ How It Works</div>
+        <div class="about-steps">
+          <div class="about-step"><span class="about-step-num">01</span><div><strong>Select Stock</strong><br><span class="about-step-desc">Choose any NSE-listed stock. Live OHLCV data is fetched from Yahoo Finance.</span></div></div>
+          <div class="about-step"><span class="about-step-num">02</span><div><strong>Compute EMA</strong><br><span class="about-step-desc">EMA-12 (fast) and EMA-26 (slow) are calculated from real historical closing prices.</span></div></div>
+          <div class="about-step"><span class="about-step-num">03</span><div><strong>Detect Signal</strong><br><span class="about-step-desc">Golden Cross (EMA-12 &gt; EMA-26) = BUY. Death Cross = SELL. Instant crossover detection.</span></div></div>
+          <div class="about-step"><span class="about-step-num">04</span><div><strong>View Forecast</strong><br><span class="about-step-desc">Day-wise price forecast up to 30 days with confidence score and downloadable report.</span></div></div>
+        </div>
+      </div>
+
+      <!-- Tech Stack -->
+      <div class="about-section">
+        <div class="about-section-title">🛠 Tech Stack</div>
+        <div class="about-tags">
+          <span class="about-tag-chip green">EMA Crossover</span>
+          <span class="about-tag-chip blue">Chart.js</span>
+          <span class="about-tag-chip">HTML / CSS / JS</span>
+          <span class="about-tag-chip">Python / Pandas</span>
+          <span class="about-tag-chip">Yahoo Finance API</span>
+          <span class="about-tag-chip">NSE / BSE Data</span>
+          <span class="about-tag-chip">Figma (UI)</span>
+          <span class="about-tag-chip">Scikit-learn</span>
+        </div>
+      </div>
+
+      <!-- Team -->
+      <div class="about-section">
+        <div class="about-section-title">👥 Team — Group EPD-B7</div>
+        <div class="about-team">
+          <div class="about-member" style="--c:#00e5a0">
+            <div class="member-avatar" style="border-color:#00e5a0; color:#00e5a0">A</div>
+            <div class="member-name">Aditya More</div>
+            <div class="member-role">ML, Backend & Research</div>
+          </div>
+          <div class="about-member" style="--c:#3b82f6">
+            <div class="member-avatar" style="border-color:#3b82f6; color:#3b82f6">P</div>
+            <div class="member-name">Pranav Morale</div>
+            <div class="member-role">Frontend & UI</div>
+          </div>
+          <div class="about-member" style="--c:#f59e0b">
+            <div class="member-avatar" style="border-color:#f59e0b; color:#f59e0b">P</div>
+            <div class="member-name">Prithviraj Mokate</div>
+            <div class="member-role">Data, Analysis & Docs</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Disclaimer -->
+      <p class="about-disclaimer">⚠ Built for educational purposes only as part of the Engineering Product Design course. Not financial advice. Always do your own research before investing.</p>
+
+    </div><!-- /scroll -->
+  </div>
+</div>
+
+<!-- ── ABOUT STYLES ── -->
+<style>
+.about-box {
+  background: #0d1526;
+  border: 1px solid rgba(59,130,246,0.2);
+  border-radius: 20px;
+  width: 100%; max-width: 600px;
+  max-height: 88vh;
+  display: flex; flex-direction: column;
+  position: relative;
+  box-shadow: 0 24px 80px rgba(0,0,0,0.6);
+  transform: scale(0.94) translateY(16px);
+  transition: transform 0.3s ease;
+  overflow: hidden;
+}
+.modal-overlay.active .about-box { transform: scale(1) translateY(0); }
+
+.about-header {
+  padding: 28px 32px 20px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.about-logo {
+  font-family: var(--font-mono);
+  font-size: 0.95rem; font-weight: 500;
+  color: var(--green);
+  display: flex; align-items: center; gap: 7px;
+  margin-bottom: 8px;
+}
+.about-tag {
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  margin-bottom: 8px;
+}
+.about-title {
+  font-size: 1.5rem; font-weight: 800;
+  letter-spacing: -0.8px;
+  color: var(--text);
+}
+
+.about-scroll {
+  overflow-y: auto; flex: 1;
+  padding: 24px 32px 28px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(59,130,246,0.2) transparent;
+}
+.about-scroll::-webkit-scrollbar { width: 4px; }
+.about-scroll::-webkit-scrollbar-track { background: transparent; }
+.about-scroll::-webkit-scrollbar-thumb { background: rgba(59,130,246,0.2); border-radius: 4px; }
+
+.about-section { margin-bottom: 24px; }
+.about-section-title {
+  font-size: 0.78rem; font-weight: 700;
+  color: var(--blue);
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  margin-bottom: 10px;
+  font-family: var(--font-mono);
+}
+.about-p {
+  font-size: 0.85rem; color: #94a3b8;
+  line-height: 1.75;
+}
+.hl-green { color: var(--green); font-weight: 600; }
+.hl-blue  { color: var(--blue);  font-weight: 600; }
+
+/* Steps */
+.about-steps { display: flex; flex-direction: column; gap: 10px; }
+.about-step {
+  display: flex; align-items: flex-start; gap: 12px;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 14px;
+  transition: border-color 0.2s;
+}
+.about-step:hover { border-color: rgba(0,229,160,0.2); }
+.about-step-num {
+  font-family: var(--font-mono);
+  font-size: 0.7rem; font-weight: 500;
+  color: var(--green);
+  background: rgba(0,229,160,0.08);
+  border: 1px solid rgba(0,229,160,0.2);
+  border-radius: 50%;
+  width: 28px; height: 28px;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.about-step strong { font-size: 0.85rem; color: var(--text); }
+.about-step-desc { font-size: 0.78rem; color: var(--muted); line-height: 1.5; }
+
+/* Tags */
+.about-tags { display: flex; flex-wrap: wrap; gap: 7px; }
+.about-tag-chip {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  padding: 4px 11px;
+  border-radius: 100px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid var(--border);
+  color: var(--muted);
+}
+.about-tag-chip.green { border-color: rgba(0,229,160,0.3); color: var(--green); background: rgba(0,229,160,0.06); }
+.about-tag-chip.blue  { border-color: rgba(59,130,246,0.3); color: var(--blue);  background: rgba(59,130,246,0.06); }
+
+/* Team */
+.about-team { display: grid; grid-template-columns: repeat(3,1fr); gap: 10px; }
+.about-member {
+  background: rgba(255,255,255,0.03);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px 12px;
+  text-align: center;
+  transition: border-color 0.2s;
+}
+.about-member:hover { border-color: rgba(255,255,255,0.1); }
+.member-avatar {
+  width: 42px; height: 42px;
+  border-radius: 50%;
+  border: 2px solid;
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 800; font-size: 1rem;
+  margin: 0 auto 10px;
+  background: rgba(0,0,0,0.3);
+}
+.member-name  { font-size: 0.82rem; font-weight: 700; color: var(--text); margin-bottom: 3px; }
+.member-role  { font-size: 0.71rem; color: var(--muted); }
+
+/* Disclaimer */
+.about-disclaimer {
+  font-size: 0.72rem; color: #3a4a60;
+  border-top: 1px solid var(--border);
+  padding-top: 16px; line-height: 1.6;
+}
+
+@media (max-width: 480px) {
+  .about-box { max-height: 92vh; }
+  .about-header, .about-scroll { padding-left: 20px; padding-right: 20px; }
+  .about-team { grid-template-columns: 1fr; }
+}
+</style>
+
+<script>
+function openAbout() {
+  document.getElementById('aboutModal').classList.add('active');
+  document.body.style.overflow = 'hidden';
+}
+function closeAbout() {
+  document.getElementById('aboutModal').classList.remove('active');
+  document.body.style.overflow = '';
+}
+function handleAboutOverlay(e) {
+  if (e.target === document.getElementById('aboutModal')) closeAbout();
+}
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') { closeAbout(); closeLogin(); }
+});
+</script>
+
+<!-- ════════════════ LEARN MODAL ════════════════ -->
+<div class="modal-overlay" id="learnModal" onclick="handleLearnOverlay(event)">
+  <div class="learn-box" id="learnBox">
+
+    <button class="modal-close" onclick="closeLearn()">✕</button>
+
+    <!-- Header -->
+    <div class="about-header">
+      <div class="about-logo">
+        <span class="nav-logo-dot" style="width:10px;height:10px;"></span>
+        StockSense — Learn
+      </div>
+      <div class="about-tag">Step-by-Step Guide &nbsp;·&nbsp; EMA Prediction</div>
+      <h2 class="about-title">How to Use StockSense</h2>
+    </div>
+
+    <div class="learn-scroll">
+
+      <!-- VIDEO SECTION -->
+      <div class="learn-section">
+        <div class="learn-section-title">🎬 Video Walkthrough</div>
+        <div class="video-wrapper">
+          <div class="video-placeholder">
+            <div class="video-play-btn" onclick="playVideo()">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="white"><path d="M8 5v14l11-7z"/></svg>
+            </div>
+            <div class="video-label">StockSense — Full Walkthrough</div>
+            <div class="video-sub">How to predict NSE stock trends using EMA</div>
+            <!-- Embed your YouTube/video link here -->
+            <iframe
+              id="learnVideo"
+              style="display:none; position:absolute; inset:0; width:100%; height:100%; border:none; border-radius:12px;"
+              src=""
+              data-src="https://www.youtube.com/embed/dQw4w9WgXcQ?autoplay=1"
+              allow="autoplay; fullscreen"
+              allowfullscreen>
+            </iframe>
+          </div>
+          <p class="video-note">📌 Replace the video URL in the code with your actual demo recording or YouTube link.</p>
+        </div>
+      </div>
+
+      <!-- STEPS -->
+      <div class="learn-section">
+        <div class="learn-section-title">📋 Step-by-Step Guide</div>
+        <div class="learn-steps">
+
+          <div class="learn-step">
+            <div class="learn-step-left">
+              <div class="learn-step-num">01</div>
+              <div class="learn-step-line"></div>
+            </div>
+            <div class="learn-step-right">
+              <div class="learn-step-header">
+                <span class="learn-step-icon">🔑</span>
+                <span class="learn-step-title">Login to StockSense</span>
+              </div>
+              <p class="learn-step-desc">Click the <strong>Login</strong> or <strong>Start Predicting</strong> button on the homepage. Enter your email and password to sign in. New users can create a free account using the Sign Up tab.</p>
+              <div class="learn-tip">💡 You can also sign in quickly using Google or GitHub.</div>
+            </div>
+          </div>
+
+          <div class="learn-step">
+            <div class="learn-step-left">
+              <div class="learn-step-num">02</div>
+              <div class="learn-step-line"></div>
+            </div>
+            <div class="learn-step-right">
+              <div class="learn-step-header">
+                <span class="learn-step-icon">📌</span>
+                <span class="learn-step-title">Select a Stock</span>
+              </div>
+              <p class="learn-step-desc">On the dashboard, use the <strong>Select Stock</strong> dropdown to choose any NSE-listed Indian stock — such as RELIANCE, TCS, INFY, HDFC Bank, and more. Live data will load automatically from Yahoo Finance.</p>
+              <div class="learn-tip">💡 Wait 2–3 seconds for the chart to load real market data.</div>
+            </div>
+          </div>
+
+          <div class="learn-step">
+            <div class="learn-step-left">
+              <div class="learn-step-num">03</div>
+              <div class="learn-step-line"></div>
+            </div>
+            <div class="learn-step-right">
+              <div class="learn-step-header">
+                <span class="learn-step-icon">⚙️</span>
+                <span class="learn-step-title">Configure Your Settings</span>
+              </div>
+              <p class="learn-step-desc">Set the <strong>Prediction Period</strong> using the slider — choose between 7 to 30 days ahead. Select your <strong>Historical Window</strong> (60, 90, or 180 days) and choose a <strong>Model Type</strong> (EMA Crossover, EMA + MACD, or Hybrid).</p>
+              <div class="learn-tip">💡 For beginners, use the default EMA Crossover model with a 7-day prediction.</div>
+            </div>
+          </div>
+
+          <div class="learn-step">
+            <div class="learn-step-left">
+              <div class="learn-step-num">04</div>
+              <div class="learn-step-line"></div>
+            </div>
+            <div class="learn-step-right">
+              <div class="learn-step-header">
+                <span class="learn-step-icon">▶️</span>
+                <span class="learn-step-title">Run the Prediction</span>
+              </div>
+              <p class="learn-step-desc">Click the green <strong>Run Prediction</strong> button. The EMA engine will compute EMA-12 and EMA-26, detect any crossover, and generate your forecast within seconds.</p>
+              <div class="learn-tip">💡 The button shows a loading spinner while computing — wait for it to finish.</div>
+            </div>
+          </div>
+
+          <div class="learn-step">
+            <div class="learn-step-left">
+              <div class="learn-step-num">05</div>
+              <div class="learn-step-line"></div>
+            </div>
+            <div class="learn-step-right">
+              <div class="learn-step-header">
+                <span class="learn-step-icon">📊</span>
+                <span class="learn-step-title">Read the EMA Chart</span>
+              </div>
+              <p class="learn-step-desc">The main chart shows three lines — the <span class="hl-green">Price (green)</span>, <span class="hl-blue">EMA-12 (blue dashed)</span>, and <span class="hl-orange">EMA-26 (orange dashed)</span>. When EMA-12 crosses above EMA-26, a <strong style="color:var(--green)">Golden Cross</strong> is formed. When it crosses below, a <strong style="color:var(--red)">Death Cross</strong> is detected.</p>
+              <div class="learn-tip">💡 Golden Cross = potential uptrend. Death Cross = potential downtrend.</div>
+            </div>
+          </div>
+
+          <div class="learn-step">
+            <div class="learn-step-left">
+              <div class="learn-step-num">06</div>
+              <div class="learn-step-line"></div>
+            </div>
+            <div class="learn-step-right">
+              <div class="learn-step-header">
+                <span class="learn-step-icon">🔮</span>
+                <span class="learn-step-title">View the Forecast</span>
+              </div>
+              <p class="learn-step-desc">Scroll down to see the <strong>Predicted Trend chart</strong> and the <strong>Day-Wise Forecast Table</strong>. Each row shows the estimated price and a ▲/▼ signal badge for that day. The confidence score is shown in the signal banner.</p>
+              <div class="learn-tip">💡 Higher confidence % = stronger signal strength.</div>
+            </div>
+          </div>
+
+          <div class="learn-step">
+            <div class="learn-step-left">
+              <div class="learn-step-num">07</div>
+            </div>
+            <div class="learn-step-right">
+              <div class="learn-step-header">
+                <span class="learn-step-icon">📥</span>
+                <span class="learn-step-title">Use the Insights</span>
+              </div>
+              <p class="learn-step-desc">Use the EMA signal alongside your own research to make an informed investment decision. Remember — StockSense provides <strong>data-driven trend signals</strong>, not guaranteed predictions. Always verify with additional sources.</p>
+              <div class="learn-tip" style="border-color:rgba(244,63,94,0.3); background:rgba(244,63,94,0.05); color:#f87171;">⚠ Not financial advice. Use for educational purposes only.</div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- GLOSSARY -->
+      <div class="learn-section">
+        <div class="learn-section-title">📖 Quick Glossary</div>
+        <div class="glossary-grid">
+          <div class="glossary-item">
+            <span class="glossary-term">EMA</span>
+            <span class="glossary-def">Exponential Moving Average — gives more weight to recent prices.</span>
+          </div>
+          <div class="glossary-item">
+            <span class="glossary-term">EMA-12</span>
+            <span class="glossary-def">Fast EMA — reacts quickly to recent price changes.</span>
+          </div>
+          <div class="glossary-item">
+            <span class="glossary-term">EMA-26</span>
+            <span class="glossary-def">Slow EMA — smoother, longer-term trend indicator.</span>
+          </div>
+          <div class="glossary-item">
+            <span class="glossary-term">Golden Cross</span>
+            <span class="glossary-def">EMA-12 crosses above EMA-26 → Bullish (Uptrend) signal.</span>
+          </div>
+          <div class="glossary-item">
+            <span class="glossary-term">Death Cross</span>
+            <span class="glossary-def">EMA-12 crosses below EMA-26 → Bearish (Downtrend) signal.</span>
+          </div>
+          <div class="glossary-item">
+            <span class="glossary-term">OHLCV</span>
+            <span class="glossary-def">Open, High, Low, Close, Volume — standard stock price data.</span>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /scroll -->
+  </div>
+</div>
+
+<!-- ── LEARN STYLES ── -->
+<style>
+.learn-box {
+  background: #0d1526;
+  border: 1px solid rgba(59,130,246,0.2);
+  border-radius: 20px;
+  width: 100%; max-width: 660px;
+  max-height: 90vh;
+  display: flex; flex-direction: column;
+  position: relative;
+  box-shadow: 0 24px 80px rgba(0,0,0,0.6);
+  transform: scale(0.94) translateY(16px);
+  transition: transform 0.3s ease;
+  overflow: hidden;
+}
+.modal-overlay.active .learn-box { transform: scale(1) translateY(0); }
+
+.learn-scroll {
+  overflow-y: auto; flex: 1;
+  padding: 24px 32px 32px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(59,130,246,0.2) transparent;
+}
+.learn-scroll::-webkit-scrollbar { width: 4px; }
+.learn-scroll::-webkit-scrollbar-track { background: transparent; }
+.learn-scroll::-webkit-scrollbar-thumb { background: rgba(59,130,246,0.2); border-radius: 4px; }
+
+.learn-section { margin-bottom: 28px; }
+.learn-section-title {
+  font-size: 0.78rem; font-weight: 700;
+  color: var(--blue);
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  margin-bottom: 14px;
+  font-family: var(--font-mono);
+}
+
+/* Video */
+.video-wrapper { margin-bottom: 8px; }
+.video-placeholder {
+  position: relative;
+  width: 100%; padding-top: 52%;
+  background: linear-gradient(135deg, #0a1628, #111d35);
+  border: 1px solid rgba(59,130,246,0.2);
+  border-radius: 12px;
+  overflow: hidden;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+}
+.video-play-btn {
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -60%);
+  width: 56px; height: 56px;
+  background: rgba(59,130,246,0.85);
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  transition: all 0.25s;
+  box-shadow: 0 0 30px rgba(59,130,246,0.4);
+  z-index: 2;
+}
+.video-play-btn:hover { background: var(--blue); transform: translate(-50%, -60%) scale(1.1); }
+.video-label {
+  position: absolute;
+  bottom: 36px; left: 0; right: 0;
+  text-align: center;
+  font-size: 0.9rem; font-weight: 700;
+  color: var(--text);
+  z-index: 2;
+}
+.video-sub {
+  position: absolute;
+  bottom: 18px; left: 0; right: 0;
+  text-align: center;
+  font-size: 0.75rem;
+  color: var(--muted);
+  z-index: 2;
+}
+/* Grid background on video placeholder */
+.video-placeholder::before {
+  content: '';
+  position: absolute; inset: 0;
+  background-image:
+    linear-gradient(rgba(59,130,246,0.06) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(59,130,246,0.06) 1px, transparent 1px);
+  background-size: 28px 28px;
+}
+.video-note {
+  font-size: 0.72rem; color: var(--muted);
+  margin-top: 8px; font-family: var(--font-mono);
+}
+
+/* Steps */
+.learn-steps { display: flex; flex-direction: column; gap: 0; }
+.learn-step {
+  display: flex; gap: 16px;
+  align-items: flex-start;
+}
+.learn-step-left {
+  display: flex; flex-direction: column; align-items: center;
+  flex-shrink: 0;
+}
+.learn-step-num {
+  width: 32px; height: 32px;
+  border-radius: 50%;
+  background: rgba(0,229,160,0.08);
+  border: 1px solid rgba(0,229,160,0.25);
+  font-family: var(--font-mono);
+  font-size: 0.68rem; font-weight: 500;
+  color: var(--green);
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0; z-index: 1;
+}
+.learn-step-line {
+  width: 1px; flex: 1; min-height: 20px;
+  background: linear-gradient(to bottom, rgba(0,229,160,0.2), transparent);
+  margin: 4px 0;
+}
+.learn-step-right {
+  flex: 1;
+  padding-bottom: 20px;
+}
+.learn-step-header {
+  display: flex; align-items: center; gap: 8px;
+  margin-bottom: 7px;
+}
+.learn-step-icon { font-size: 1rem; }
+.learn-step-title {
+  font-size: 0.95rem; font-weight: 700;
+  color: var(--text);
+}
+.learn-step-desc {
+  font-size: 0.82rem; color: #94a3b8;
+  line-height: 1.7; margin-bottom: 8px;
+}
+.learn-tip {
+  font-size: 0.76rem;
+  color: #4ade80;
+  background: rgba(0,229,160,0.05);
+  border: 1px solid rgba(0,229,160,0.15);
+  border-radius: 6px;
+  padding: 6px 10px;
+  line-height: 1.5;
+}
+.hl-green  { color: var(--green);  font-weight: 600; }
+.hl-blue   { color: var(--blue);   font-weight: 600; }
+.hl-orange { color: #f59e0b;       font-weight: 600; }
+
+/* Glossary */
+.glossary-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.glossary-item {
+  background: rgba(255,255,255,0.03);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 10px 12px;
+  transition: border-color 0.2s;
+}
+.glossary-item:hover { border-color: rgba(59,130,246,0.2); }
+.glossary-term {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 0.72rem; font-weight: 500;
+  color: var(--green);
+  margin-bottom: 3px;
+}
+.glossary-def {
+  font-size: 0.78rem; color: var(--muted);
+  line-height: 1.5;
+}
+
+@media (max-width: 520px) {
+  .learn-box { max-height: 92vh; }
+  .learn-scroll { padding: 16px 18px 24px; }
+  .glossary-grid { grid-template-columns: 1fr; }
+  .about-header { padding: 20px 18px 16px; }
+}
+</style>
+
+<script>
+function openLearn() {
+  document.getElementById('learnModal').classList.add('active');
+  document.body.style.overflow = 'hidden';
+}
+function closeLearn() {
+  document.getElementById('learnModal').classList.remove('active');
+  document.body.style.overflow = '';
+  // Stop video if playing
+  const iframe = document.getElementById('learnVideo');
+  iframe.style.display = 'none';
+  iframe.src = '';
+}
+function handleLearnOverlay(e) {
+  if (e.target === document.getElementById('learnModal')) closeLearn();
+}
+function playVideo() {
+  const iframe = document.getElementById('learnVideo');
+  const placeholder = document.querySelector('.video-play-btn');
+  const label = document.querySelector('.video-label');
+  const sub   = document.querySelector('.video-sub');
+  // Load the src
+  iframe.src = iframe.getAttribute('data-src');
+  iframe.style.display = 'block';
+  if (placeholder) placeholder.style.display = 'none';
+  if (label) label.style.display = 'none';
+  if (sub)   sub.style.display   = 'none';
+}
+// Update ESC to close all modals
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') { closeAbout(); closeLogin(); closeLearn(); }
+});
+</script>
+
+</body>
+</html>

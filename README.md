@@ -6,7 +6,7 @@
 StockSense is a web-based stock trend prediction dashboard for Indian retail investors. It uses **EMA-12 / EMA-26** crossover analysis to predict whether a stock is heading into an **UPTREND ▲** or **DOWNTREND ▼**.
 
 ## Live Demo
-🔗 [Click here to view](https://yourusername.github.io/stocksense)
+🔗 [Click here to view]( https://adityamore1508.github.io/Stocksense-Final/)
 
 ## Features
 - 📊 EMA-12 / EMA-26 Golden Cross & Death Cross detection
